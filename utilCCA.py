@@ -51,6 +51,8 @@ def buildAnnotations(collection, feature, rootpath, outputFile="image_tags.bin")
 	with open(outputFile,'wb') as f:
 	    pickle.dump(img_annotations_dict, f)
 	    pickle.dump(nr_images, f)
+	with open("shape.txt","w") as f:
+		f.write(str(nr_images))
 	print "done"
 	
 
@@ -62,6 +64,9 @@ def readAnnotations(filename='image_tags.bin'):
 	    nr_images = pickle.load(f)
 	return annotations, nr_images
 
+
+
+
 '''
 Function: buildFeatures
 build visual and textual matrix
@@ -70,37 +75,49 @@ save idx_mapping and both matrices into a binary file for later purposes
 '''
 
 def buildFeatures(collection,feature,rootpath,outputFile='feature.bin'):
-	annotations, nr_images = readAnnotations()
+	annotations, nr_images = readAnnotations('image_tags.bin')
 	feature_file_dir = os.path.join(rootpath, collection, "FeatureData", feature)
 	visual_feature, idx_mapping = buildVisualFeatures(feature_file_dir, nr_images)
-	textual_feature = buildTextualFeatures(annotations, nr_images, idx_mapping)
+	tagDict = buildTagsDictionary(rootpath, collection, top_n = 1000)
+	textual_feature = buildTextualFeatures(rootpath, collection, tagDict, nr_images, idx_mapping)
+	semantic_feature = buildSemanticFeatures(annotations, idx_mapping)
 	print "[buildFeatures] writing feature matrix into %s..."%(outputFile)
 	with open(outputFile,'wb') as f:
 		pickle.dump(idx_mapping, f)
+		print '[buildFeatures] writing visual feature matrix...'
 		pickle.dump(visual_feature, f)
+		print '[buildFeatures] writing textual feature matrix...'
 		pickle.dump(textual_feature, f)
+		print '[buildFeatures] writing semantic feature matrix...'
+		pickle.dump(semantic_feature, f)
 	print 'Done'
 
 
-def buildSampleFeatures(idx_mapping, visual_feature, textual_feature, outputFile='sample_feature.bin'):
+def buildSampleFeatures(idx_mapping, visual_feature, textual_feature, semantic_feature, outputFile='sample_feature.bin'):
+	print "[buildSampleFeatures] writing feature matrix into %s..."%(outputFile)
 	with open(outputFile,'wb') as f:
 		pickle.dump(idx_mapping, f)
 		pickle.dump(visual_feature, f)
 		pickle.dump(textual_feature, f)
+		pickle.dump(semantic_feature, f)
 
 def readSampleFeatures(inputFile='sample_feature.bin'):
+	print "[readSampleFeatures] feading sample features(est. 5min)"
 	with open(inputFile,'rb') as f:
 		idx_mapping = pickle.load(f)
 		visual_feature = pickle.load(f)
 		textual_feature = pickle.load(f)
-	return idx_mapping, visual_feature, textual_feature
+		semantic_feature = pickle.load(f)
+	return idx_mapping, visual_feature, textual_feature, semantic_feature
 	
 def readFeatures(feature_file='feature.bin', sampleRatio=0.25):
-	print "reading original features...."
+	print "reading original features(est. ~20mins)...."
 	with open(feature_file,'rb') as f:
 		idx_mapping = pickle.load(f)
 		visual_feature = pickle.load(f)
 		textual_feature = pickle.load(f)
+		semantic_feature = pickle.load(f)
+
 	assert(len(visual_feature) == len(textual_feature))
 	print "downsampling training visual and textual feature, sampleRatio=%f...."%(sampleRatio)
 	random.seed(24)
@@ -109,6 +126,7 @@ def readFeatures(feature_file='feature.bin', sampleRatio=0.25):
 	random.shuffle(decision)
 	sample_visual_feature = [visual_feature[i] for i in range(len(visual_feature)) if decision[i]]
 	sample_textual_feature = [textual_feature[i] for i in range(len(textual_feature)) if decision[i]]
+	sample_semantic_feature = [semantic_feature[i] for i in range(len(semantic_feature)) if decision[i]]
 	print "rearranging sample idx_mapping..."
 	idx_mapping_kv_lst = [(k,v) for (k,v) in idx_mapping.items()]
 	idx_mapping_kv_lst.sort(key=lambda x:x[1]) # sort by idx in feature matrix
@@ -117,7 +135,8 @@ def readFeatures(feature_file='feature.bin', sampleRatio=0.25):
 	sample_idx_mapping = {sample_idx_mapping_lst[i]:i for i in range(len(sample_idx_mapping_lst))}
 	assert(len(sample_visual_feature) == len(sample_textual_feature))
 	assert(len(sample_idx_mapping) == len(sample_visual_feature))
-	return sample_idx_mapping, sample_visual_feature, sample_textual_feature
+	assert(len(sample_visual_feature) == len(sample_semantic_feature))
+	return sample_idx_mapping, sample_visual_feature, sample_textual_feature, sample_semantic_feature
 
 
 
@@ -136,19 +155,103 @@ def buildVisualFeatures(feature_file_dir, nr_images):
 	return feature_matrix, idx_mapping
 
 
-
-def buildTextualFeatures(annotations, nr_images, idx_mapping):
-	feature_matrix = [None for i in range(nr_images)]
-	assert(nr_images == len(annotations))
+def buildTextualFeatures(rootpath, collection, tagDict, nr_images, idx_mapping):
+	print "[buildTextualFeatures] creating tag features"
+	tagFile = os.path.join(rootpath,collection, "TextData", "id.userid.lemmtags.txt")
+	feature_matrix = [[0 for j in range(len(tagDict))] for i in range(nr_images)]
+	with open(tagFile) as f:
+		img_count = sum(1 for _ in f)
+	assert(img_count == nr_images)
 	count = 0
-	for (k,v) in annotations.items():
-	    if count % 1000 == 0:
-	        print "%d images' textual feature added..."%(count)
-	    idx = idx_mapping[k]
-	    feature_matrix[idx] = v
-	    count += 1
+	for line in open(tagFile):
+		if count % 1000 == 0:
+			print "%d images tag features added"%count
+		columns = line.strip('\n').split('\t')
+		img_id = columns[0]
+		tags = columns[2].split(' ')
+		for tag in tags:
+			tag = tag.strip('\r')
+			if tag in tagDict.keys():
+				feature_matrix[idx_mapping[img_id]][tagDict[tag]] = 1
+		count += 1
 	return feature_matrix
+
+
+
+def buildSemanticFeatures(annotations, idx_mapping):
+	nr_images = len(idx_mapping)
+	feature_matrix = [None for i in range(nr_images)]
+	for (k,v) in annotations.items():
+		feature_matrix[idx_mapping[k]] = v
+	return feature_matrix
+
+# build a dictionary of top N frequent words from lemmtag file	
+
+def buildTagsDictionary(rootpath, collection, top_n = 1000):
+	tagFile = os.path.join(rootpath,collection, "TextData", "id.userid.lemmtags.txt")
+	tagDict = dict()
+	for line in open(tagFile):
+		columns = line.strip('\n').split('\t')
+		tags = columns[2].split(' ')
+		for tag in tags:
+			tag = tag.strip('\r')
+			if tag not in tagDict:
+				tagDict[tag] = 1
+			else:
+				tagDict[tag] += 1
+	print "%d tags in total have been added to full dictionary"%len(tagDict)
+	tagList = [(k,v) for (k,v) in tagDict.items()]
+	tagList.sort(key=lambda x:x[1], reverse=True)
+	return {tagList[i][0]:i for i in range(min(top_n, len(tagList)))}
 	
+
+def buildFreqTags(rootpath, collection, top_n = 1000, outputFile = "freqtags.txt"):
+	print "collecting top %d frequent tags and saving into %s..."%(top_n, outputFile)
+	tagFile = os.path.join(rootpath,collection, "TextData", "id.userid.lemmtags.txt")
+	tagDict = dict()
+	for line in open(tagFile):
+		columns = line.strip('\n').split('\t')
+		tags = columns[2].split(' ')
+		for tag in tags:
+			tag = tag.strip('\r')
+			if tag not in tagDict:
+				tagDict[tag] = 1
+			else:
+				tagDict[tag] += 1
+	
+	tagList = [(k,v) for (k,v) in tagDict.items()]
+	tagList.sort(key=lambda x:x[1], reverse=True)
+	with open(outputFile,"w") as f:
+		for i in range(min(top_n, len(tagList))):
+			f.write("%d %s %d\n"%(i,tagList[i][0],tagList[i][1]))
+	print "Done"
+
+def readFreqTags(inputFile, top_n = 1000):
+	tagDict = dict()
+	for line in open(inputFile,'r'):
+		curr = line.strip('\n').split(' ')
+		tagDict[curr[1]] = curr[0]
+	assert(top_n <= len(tagDict))
+	return tagDict
+
+
+def getTagIdxMapping(inputFile='freqtags.txt'):
+	tagIdxMapping = dict()
+	for line in open(inputFile,'r'):
+		curr = line.strip('\n').split(' ')
+		#print curr[0],curr[1]
+		tagIdxMapping[int(curr[0])] = curr[1]
+
+	return tagIdxMapping
+
+
+
+				
+
+
+
+	
+
 
 
 

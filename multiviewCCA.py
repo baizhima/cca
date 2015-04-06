@@ -20,18 +20,20 @@ def multiviewCCA(X, index, reg):
         C_all[np.ix_(index_f,index_f)] = C_all[np.ix_(index_f,index_f)] + reg*np.eye(len(index_f))
     print "done. Time elapsed %f seconds"%(time.time()-s)
     s = time.time()
-    print "start eigin decomposition..."
-    [V,D] = Sci.linalg.eig(C_all, C_diag)
+    print "start eigin decomposition(est. 20min)..."
+    # [D,V] = EIG(A,B) produces a diagonal matrix D of generalized
+    # eigenvalues and a full matrix V whose columns are the corresponding
+    # eigenvectors so that A*V = B*V*D.
+    [D,V] = Sci.linalg.eig(C_all, C_diag)
     print "done. Time elapsed %f seconds"%(time.time()-s)
-    diagVal = [(D[i][i],i) for i in range(D.shape[0])]
+    diagVal = [(D[i],i) for i in range(V.shape[0])]
     diagVal.sort(key=lambda x:x[0], reverse=True)
     a = [diagVal[i][0] for i in range(len(diagVal))]
     index = [diagVal[i][1] for i in range(len(diagVal))]
-    D = np.diag(a)
-    V2 = V.reshape(1,V.shape[0])
-    V = V2[np.ix_([i for i in range(V2.shape[0])], [idx for idx in index])]
-    
-    return [V, D]
+    D = np.diag(a)  
+    V2 = V[np.ix_([i for i in range(V.shape[0])], [idx for idx in index])]
+    #print "where!!"
+    return [V2, D]
 
 
 

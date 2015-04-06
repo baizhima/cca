@@ -18,8 +18,8 @@ class ccaModel:
 		with open(modelfile,'rb') as f:
 		    idx_mapping = pickle.load(f)
 		    nviews = pickle.load(f)
-		    W1, W2, W3 = pickle.load(f) # W1:1024*1024, W2:81*81, W3:None
-		    D1, D2, D3 = pickle.load(f) # D1:1024*1024, D2:81*81, D3:None
+		    W1, W2, W3 = pickle.load(f) 
+		    D1, D2, D3 = pickle.load(f) 
 		print "done"
 		return idx_mapping, nviews, [W1,W2,W3],[D1,D2,D3]
 
@@ -32,7 +32,7 @@ class ccaModel:
 		return topConcepts
 
 	# sim(x,y) = ((phi_x * W1[i] * D1[i]) * (phi_y * W2[i] * D2[i]).T) / (sqrt((phi_x * W1[i] * D1[i]).^2) * sqrt((phi_y * W2[i] * D2[i]).T).^2))
-	def compute_similarity(self, x, view1, y, view2):
+	def compute_similarity(self, x, view1, y, view2, pwr=4):
 		assert(view1 >= 1 and view1 <= 3 and view2 >= 1 and view2 <= 3)
 		W1, W2 = self.W[view1-1], self.W[view2-1]
 		D1, D2 = self.D[view1-1], self.D[view2-1]
@@ -44,14 +44,14 @@ class ccaModel:
 	def get_feature(x, viewNo):
 		if viewNo == 1: # x is img_id, from img_id to dsift feature vector
 			return 1
-		elif viewNo == 2:
+		elif viewNo == 2: # x is list of top_n tags
 			return 
 
 
 
 	def kernel_mapping(x, viewNo):
 		if viewNo == 1: # Bhattacharyya kernel term-wise sqrt 
-			return np.array([math.sqrt(t) for t in x])
+			return np.array([math.sqrt(elem) for elem in x])
 		return x
 
 	
