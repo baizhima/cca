@@ -119,20 +119,21 @@ class ccaModel:
 			return np.array([math.sqrt(elem) for elem in x])
 		if viewNo == 2:
 			norm = np.linalg.norm(x) # normalized vector(not mentioned in paper explicitly)
-			return x/norm
+			#return x/norm
+			return x
 
 
 
 if __name__ == '__main__':
 	mymodel = ccaModel('flickr81train','dsift', ROOT_PATH,'cca.model')
-	'''
+	
 	print 'I2I test search'
-	test_img = '857801641'
+	test_img = '201430039'
 	topList = mymodel.I2I_get_top_n_images(test_img, 8)
 	mymodel.I2I_check_correctness(test_img, topList)
-	'''
+	
 	print 'T2I test search'
-	test_tags = ['grass','sky']
+	test_tags = ['girl','black']
 	topList = mymodel.T2I_get_top_n_images(test_tags, 8)
 	mymodel.T2I_check_correctness(test_tags, topList)
 	
