@@ -49,7 +49,7 @@ class ccaLearner:
         return np.dot(U, np.diag(s))
 
 
-    def cca_training(self, nviews=2, trainRatio = 0.3):
+    def cca_training(self, nviews=2):
         self.nviews = nviews
         print "training a %d-view CCA model."%(nviews)
         print " Loading textual and visual feature into np arrays..."
@@ -57,8 +57,8 @@ class ccaLearner:
         T = np.array(self.svd(self.textual_feature))
         assert(T.shape[0] == X.shape[0])
         #nr_train = int(X.shape[0]*trainRatio)
-        nr_train = 2105
-        assert(nr_train >= X.shape[1] + T.shape[1])
+        nr_train = X.shape[1] + T.shape[1]
+        
         print "The number of training examples: %d"%nr_train
         view1, view2 = np.ones((X.shape[1],1)), 2 * np.ones((T.shape[1],1)) 
         index = np.concatenate((view1, view2))
@@ -70,6 +70,8 @@ class ccaLearner:
             view3 = 3 * np.ones((S.shape[1],1))
             index = np.concatenate((index, view3))
             XX = np.concatenate((XX,S),axis=1)
+            nr_train += S.shape[1]
+        
         decision = [True] * nr_train + [False] * (XX.shape[0] - nr_train)
         random.seed(52)
         random.shuffle(decision)
@@ -79,7 +81,7 @@ class ccaLearner:
         Wx = V
         index_f1 = np.nonzero(index == 1)[0].tolist() 
         index_f2 = np.nonzero(index == 2)[0].tolist()
-        d = 81 
+        d = 81 # currently set as min(X.shape[1],T.shape[1],S.shape[1])
         W1,W2,W3 = Wx[np.ix_(index_f1,index_f1)],Wx[np.ix_(index_f2,index_f2)], None
         D1,D2,D3 = D[np.ix_(index_f1,index_f1)],D[np.ix_(index_f2,index_f2)], None
         W1 = W1[np.ix_([i for i in range(W1.shape[0])],[i for i in range(d)])]
@@ -116,7 +118,7 @@ if __name__ == "__main__":
     
     #print 'get 2668663226 tag feature...\nexpected:cat kitty tabby lynx jasmine ragdoll creamcheeselover '
     #print cca.get_img_tags('2668663226')
-    cca.cca_training(3, trainRatio = 0.08)
+    cca.cca_training(nviews=3)
     cca.save_cca_model()
     #tagDict = utilCCA.buildTagsDictionary(ROOT_PATH, 'flickr81train', 1000)
     #cca.test_feature_correctness("1149309055")
