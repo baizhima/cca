@@ -16,32 +16,19 @@ INFO = 'cca.trainCCA'
 # part 1, read in data
 
 class ccaLearner:
-    def __init__(self, collection, feature, rootpath=ROOT_PATH, sampleRatio = 0.25, featureFromRaw = False):
+    def __init__(self, collection, feature, rootpath=ROOT_PATH, sampleRatio = 0.25, featureFromRaw = False, loadFromSample=False):
         self.W1, self.W2, self.W3 = None, None, None
         self.D1, self.D2, self.D3 = None, None, None
         if featureFromRaw:
             #utilCCA.buildAnnotations(collection, feature, rootpath)
             utilCCA.buildFeatures(collection,feature,rootpath)
-        self.idx_mapping, self.visual_feature, self.textual_feature, self.semantic_feature  = utilCCA.readFeatures('feature.bin',0.25)
         
-        #self.idx_mapping, self.visual_feature, self.textual_feature, self.semantic_feature = utilCCA.readSampleFeatures('sample_feature.bin')
-        
+        if loadFromSample:
+            self.idx_mapping, self.visual_feature, self.textual_feature, self.semantic_feature = utilCCA.readSampleFeatures('sample_feature.bin')
+        else:
+            self.idx_mapping, self.visual_feature, self.textual_feature, self.semantic_feature  = utilCCA.readFeatures('feature.bin',0.25)
+
     
-
-    def get_original_bigfile_feature(self, img_id):
-        return self.train_feature_file.read_one(img_id)
-
-    def get_visual_feature(self, requested, isImgId=True):
-        if isImgId:
-            return self.visual_feature[self.idx_mapping[requested]]
-        else: # requested is matrix index(range from 0 to self.nr_of_images-1)
-            return self.visual_feature[requested]
-
-    def get_textual_feature(self, requested, isImgId=True):
-        if isImgId:
-            return self.textual_feature[self.idx_mapping[requested]]
-        else: # requested is matrix index(range from 0 to self.nr_of_images-1)
-            return self.textual_feature[requested]
 
     def get_img_tags(self, requested, isImgId=True, freqTagFile='freqtags.txt'):
         tagIdxMapping = utilCCA.getTagIdxMapping(freqTagFile)
@@ -54,11 +41,6 @@ class ccaLearner:
             if currFeature[i]==1:
                 tags.append(tagIdxMapping[i])  
         return tags  
-
-
-    def get_id_mapping(self, img_id):
-        return self.idx_mapping[img_id]
-
     
 
     def svd(self, textual_feature):
@@ -74,7 +56,9 @@ class ccaLearner:
         X = np.array(self.visual_feature)
         T = np.array(self.svd(self.textual_feature))
         assert(T.shape[0] == X.shape[0])
-        nr_train = int(X.shape[0]*trainRatio)
+        #nr_train = int(X.shape[0]*trainRatio)
+        nr_train = 2105
+        assert(nr_train >= X.shape[1] + T.shape[1])
         print "The number of training examples: %d"%nr_train
         view1, view2 = np.ones((X.shape[1],1)), 2 * np.ones((T.shape[1],1)) 
         index = np.concatenate((view1, view2))
@@ -82,11 +66,12 @@ class ccaLearner:
         if nviews == 3:
             S = np.array(self.semantic_feature)
             assert(S.shape[0] == T.shape[0])
+            assert(nr_train >= X.shape[1] + T.shape[1] + S.shape[1])
             view3 = 3 * np.ones((S.shape[1],1))
             index = np.concatenate((index, view3))
             XX = np.concatenate((XX,S),axis=1)
         decision = [True] * nr_train + [False] * (XX.shape[0] - nr_train)
-        random.seed(24)
+        random.seed(52)
         random.shuffle(decision)
     	XX = XX[np.ix_([i for i in range(XX.shape[0]) if decision[i]],[i for i in range(XX.shape[1])])]
         print "done. XX dimension (%d,%d)"%(XX.shape[0],XX.shape[1])
@@ -114,13 +99,6 @@ class ccaLearner:
         return [W1,W2,W3,D1,D2,D3]  
         
 
-
-
-    def compute_similarity(self, x, y):
-        x_visual, x_textual = self.get_visual_feature(x), self.get_textual_feature(x)
-        y_visual, y_textual = self.get_visual_feature(y), self.get_textual_feature(y)
-
-
     def save_cca_model(self):
         print "writing CCA model into binary files...",
         with open('cca.model','wb') as f:
@@ -129,24 +107,16 @@ class ccaLearner:
             pickle.dump([self.W1, self.W2, self.W3], f)
             pickle.dump([self.D1, self.D2, self.D3], f)
     
-    def load_cca_model(self, filename='cca.model'):
-        print "reading CCA model from binary files...",
-        with open(filename,'rb') as f:
-            self.idx_mapping = pickle.load(f)
-            self.nviews = pickle.load(f)
-            self.W1, self.W2, self.W3 = pickle.load(f)
-            self.D1, self.D2, self.D3 = pickle.load(f)
-
         
 
 
 if __name__ == "__main__":
-    cca = ccaLearner('flickr81train','dsift',featureFromRaw=False)
-    utilCCA.buildSampleFeatures(cca.idx_mapping, cca.visual_feature, cca.textual_feature, cca.semantic_feature)
-    print 'done build sample features!'
+    cca = ccaLearner('flickr81train','dsift',featureFromRaw=False,loadFromSample=True)
+    #utilCCA.buildSampleFeatures(cca.idx_mapping, cca.visual_feature, cca.textual_feature, cca.semantic_feature)
+    
     #print 'get 2668663226 tag feature...\nexpected:cat kitty tabby lynx jasmine ragdoll creamcheeselover '
     #print cca.get_img_tags('2668663226')
-    cca.cca_training(3, trainRatio = 0.1)
+    cca.cca_training(3, trainRatio = 0.08)
     cca.save_cca_model()
     #tagDict = utilCCA.buildTagsDictionary(ROOT_PATH, 'flickr81train', 1000)
     #cca.test_feature_correctness("1149309055")

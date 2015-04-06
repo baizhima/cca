@@ -32,7 +32,6 @@ def multiviewCCA(X, index, reg):
     index = [diagVal[i][1] for i in range(len(diagVal))]
     D = np.diag(a)  
     V2 = V[np.ix_([i for i in range(V.shape[0])], [idx for idx in index])]
-    #print "where!!"
     return [V2, D]
 
 

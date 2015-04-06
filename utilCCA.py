@@ -102,7 +102,7 @@ def buildSampleFeatures(idx_mapping, visual_feature, textual_feature, semantic_f
 		pickle.dump(semantic_feature, f)
 
 def readSampleFeatures(inputFile='sample_feature.bin'):
-	print "[readSampleFeatures] feading sample features(est. 5min)"
+	print "[readSampleFeatures] reading sample features from %s(est. 5min)"%inputFile
 	with open(inputFile,'rb') as f:
 		idx_mapping = pickle.load(f)
 		visual_feature = pickle.load(f)
@@ -111,7 +111,7 @@ def readSampleFeatures(inputFile='sample_feature.bin'):
 	return idx_mapping, visual_feature, textual_feature, semantic_feature
 	
 def readFeatures(feature_file='feature.bin', sampleRatio=0.25):
-	print "reading original features(est. ~20mins)...."
+	print "reading original features from %s(est. ~20mins)...."%feature_file
 	with open(feature_file,'rb') as f:
 		idx_mapping = pickle.load(f)
 		visual_feature = pickle.load(f)
