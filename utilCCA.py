@@ -2,6 +2,7 @@
 # Shan Lu (GitHub: baizhima), Renmin University of China
 import os, sys, time, random
 import pickle
+import numpy as np
 
 from bigfile import BigFile
 
@@ -93,24 +94,53 @@ def buildFeatures(collection,feature,rootpath,outputFile='feature.bin'):
 	print 'Done'
 
 
-def buildSampleFeatures(idx_mapping, visual_feature, textual_feature, semantic_feature, outputFile='sample_feature.bin'):
-	print "[buildSampleFeatures] writing feature matrix into %s..."%(outputFile)
+
+
+
+
+
+def buildFilteredFeatures(idx_mapping, visual_feature, textual_feature, semantic_feature, outputFile='bin/filtered_feature.bin'):
+	print "[buildFilteredFeatures] writing feature matrix into %s..."%(outputFile)
 	with open(outputFile,'wb') as f:
 		pickle.dump(idx_mapping, f)
+		print '[buildFilteredFeatures] writing visual feature matrix...'
 		pickle.dump(visual_feature, f)
+		print '[buildFilteredFeatures] writing textual feature matrix...'
 		pickle.dump(textual_feature, f)
+		print '[buildFilteredFeatures] writing semantic feature matrix...'
 		pickle.dump(semantic_feature, f)
+	print 'Done'
 
-def readSampleFeatures(inputFile='sample_feature.bin'):
-	print "[readSampleFeatures] reading sample features from %s(est. 5min)"%inputFile
+
+
+
+
+def readFilteredFeatures(inputFile='bin/filtered_feature.bin'):
+	print "[readFilteredFeatures] reading filtered features from %s(est. 20min)"%inputFile
 	with open(inputFile,'rb') as f:
 		idx_mapping = pickle.load(f)
+		print '[buildreadFilteredFeatures] reading visual feature matrix...'
 		visual_feature = pickle.load(f)
+		print '[buildreadFilteredFeatures] reading textual feature matrix...'
 		textual_feature = pickle.load(f)
+		print '[buildreadFilteredFeatures] reading semantic feature matrix...'
 		semantic_feature = pickle.load(f)
+	print 'saving visual feature seperately into npy file...'
+	np.save('bin/filtered_visual_feature.npy', np.array(visual_feature))
+	print 'saving textualfeature seperately into npy file...'
+	np.save('bin/filtered_textual_feature.npy', np.array(textual_feature))
+	print 'saving semanticfeature seperately into npy file...'
+	np.save('bin/filtered_semantic_feature.npy', np.array(semantic_feature))
+	print 'Done'
+	with open('bin/idx_info.bin','wb') as f:
+		pickle.dump(idx_mapping, f)
+	print 'Done'
+
+
+	print 'filtered training set size: %d'%len(idx_mapping)
 	return idx_mapping, visual_feature, textual_feature, semantic_feature
 	
-def readFeatures(feature_file='feature.bin', sampleRatio=0.25):
+def readFeatures(feature_file='feature.bin'):
 	print "reading original features from %s(est. ~20mins)...."%feature_file
 	with open(feature_file,'rb') as f:
 		idx_mapping = pickle.load(f)
@@ -119,11 +149,11 @@ def readFeatures(feature_file='feature.bin', sampleRatio=0.25):
 		semantic_feature = pickle.load(f)
 
 	assert(len(visual_feature) == len(textual_feature))
-	print "downsampling training visual and textual feature, sampleRatio=%f...."%(sampleRatio)
-	random.seed(24)
-	sample_size = int(len(visual_feature) * sampleRatio)
-	decision = [True] * sample_size + [False] * (len(visual_feature) - sample_size)
-	random.shuffle(decision)
+	print "downsampling training visual and textual feature, filtered by occurence of freq tags"
+	decision = [True] * len(visual_feature) 
+	for i in range(len(visual_feature)):
+		if sum(textual_feature[i]) == 0: # not suitable to be a training example
+			decision[i] = False
 	sample_visual_feature = [visual_feature[i] for i in range(len(visual_feature)) if decision[i]]
 	sample_textual_feature = [textual_feature[i] for i in range(len(textual_feature)) if decision[i]]
 	sample_semantic_feature = [semantic_feature[i] for i in range(len(semantic_feature)) if decision[i]]
@@ -136,6 +166,7 @@ def readFeatures(feature_file='feature.bin', sampleRatio=0.25):
 	assert(len(sample_visual_feature) == len(sample_textual_feature))
 	assert(len(sample_idx_mapping) == len(sample_visual_feature))
 	assert(len(sample_visual_feature) == len(sample_semantic_feature))
+	buildFilteredFeatures(sample_idx_mapping, sample_visual_feature, sample_textual_feature, sample_semantic_feature)
 	return sample_idx_mapping, sample_visual_feature, sample_textual_feature, sample_semantic_feature
 
 
@@ -247,6 +278,8 @@ def getTagIdxMapping(inputFile='freqtags.txt'):
 
 
 				
+if __name__ == '__main__':
+	readFilteredFeatures()
 
 
 

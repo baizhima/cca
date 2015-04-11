@@ -6,11 +6,8 @@ import scipy as Sci
 import scipy.linalg
 
 
-def multiviewCCA(X, index, reg):
-    print "get covariance matrix 1..."
-    s = time.time()
-    C_all = np.cov(X)
-    print "done. Time elapsed %f seconds"%(time.time() - s)
+def multiviewCCA(C_all, index, reg):
+    
     C_diag = np.zeros(C_all.shape)
     print "get covariance matrix 2..."
     s = time.time()
