@@ -17,30 +17,20 @@ INFO = 'cca.trainCCA'
 # part 1, read in data
 
 class ccaLearner:
-    def __init__(self, collection, feature, rootpath=ROOT_PATH, featureFromRaw = False):
-        self.W1, self.W2, self.W3 = None, None, None
-        self.D1, self.D2, self.D3 = None, None, None
-        if featureFromRaw:
-            #utilCCA.buildAnnotations(collection, feature, rootpath)
-            utilCCA.buildFeatures(collection,feature,rootpath)
-        
-        self.idx_mapping, self.visual_feature, self.textual_feature, self.semantic_feature = utilCCA.readFilteredFeatures('bin/filtered_feature.bin')
-        
+    def __init__(self, collection, feature):
+        with open('bin/idx_info.bin','rb') as f:
+            self.idx_mapping = pickle.load(f)
+        print 'loading features(est.1min) from npy files...'
+        self.visual_feature = np.load('bin/filtered_visual_feature.npy')
+        self.textual_feature = np.load('bin/sparsed_textual_feature.npy')
+        self.semantic_feature = np.load('bin/filtered_semantic_feature.npy')
+        print 'done'
 
-    
+    def save_sparsed_T(self):
+        sparsed_T = self.svd(self.textual_feature)
+        np.save('bin/sparsed_textual_feature.npy',sparsed_T)
 
-    def get_img_tags(self, requested, isImgId=True, freqTagFile='freqtags.txt'):
-        tagIdxMapping = utilCCA.getTagIdxMapping(freqTagFile)
-        tags = []
-        if isImgId:
-            currFeature = self.textual_feature[self.idx_mapping[requested]]
-        else:
-            currFeature = self.textual_feature[requested]
-        for i in range(len(currFeature)):
-            if currFeature[i]==1:
-                tags.append(tagIdxMapping[i])  
-        return tags  
-    
+
 
     def svd(self, textual_feature):
         print "applying Singular Value Decomposition.."
@@ -50,28 +40,29 @@ class ccaLearner:
 
     def compute_feature_cov(self, nviews=3):
         self.nviews = nviews
-        print "[compute_feature_cov]Loading textual and visual feature into np arrays..."
-        X = np.array(self.visual_feature)
-        T = np.array(self.svd(self.textual_feature))
-        assert(T.shape[0] == X.shape[0])
         
+        X = self.visual_feature
+        T = self.textual_feature
+        assert(T.shape[0] == X.shape[0])
+        print "[compute_feature_cov]Concatenating features..."
         view1, view2 = np.ones((X.shape[1],1)), 2 * np.ones((T.shape[1],1)) 
         index = np.concatenate((view1, view2))
         XX = np.concatenate((X,T),axis=1)
         if nviews == 3:
-            S = np.array(self.semantic_feature)
+            S = self.semantic_feature
             assert(S.shape[0] == T.shape[0])
             view3 = 3 * np.ones((S.shape[1],1))
             index = np.concatenate((index, view3))
             XX = np.concatenate((XX,S),axis=1)
-        covMat = covarianceCCA.cov(XX)
+        print 'Done. Starting computing covariance...'
+        covMat = covarianceCCA.cov2(XX,verbose=True)
         covarianceCCA.saveCovMatrix(covMat)
         print 'Done computing and saving feature cov matrix'
 
 
 
     def cca_training(self, nviews=3):
-        covMat = covarianceCCA.loadCovMatrix('bin/feature_cov.npy')
+        covMat = np.load('bin/feature_cov.npy')
         [V,D] = multiviewCCA(covMat, index, 0.0001)
         Wx = V
         index_f1 = np.nonzero(index == 1)[0].tolist() 
@@ -97,27 +88,22 @@ class ccaLearner:
         
 
     def save_cca_model(self):
-        print "writing CCA model into binary files...",
+        print "[save_cca_model]writing CCA model into binary files...",
         with open('cca.model','wb') as f:
             pickle.dump(self.idx_mapping, f)
             pickle.dump(self.nviews, f)
             pickle.dump([self.W1, self.W2, self.W3], f)
             pickle.dump([self.D1, self.D2, self.D3], f)
+        print 'Done'
     
         
 
 
 if __name__ == "__main__":
-    mycca = ccaLearner('flickr81train','dsift',featureFromRaw = False)
-    mycca.compute_feature_cov(3)
-
-    #mycca.cca_training(3)
-    #utilCCA.buildSampleFeatures(cca.idx_mapping, cca.visual_feature, cca.textual_feature, cca.semantic_feature)
+    mycca = ccaLearner('flickr81train','dsift')
+    mycca.compute_feature_cov()
     
-    #print 'get 2668663226 tag feature...\nexpected:cat kitty tabby lynx jasmine ragdoll creamcheeselover '
-    #print cca.get_img_tags('2668663226')
-    #cca.cca_training(nviews=3)
-    #cca.save_cca_model()
-    #tagDict = utilCCA.buildTagsDictionary(ROOT_PATH, 'flickr81train', 1000)
-    #cca.test_feature_correctness("1149309055")
+    mycca.cca_training(3)
+    mycca.save_cca_model()
+    
     
