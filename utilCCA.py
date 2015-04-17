@@ -4,6 +4,7 @@ import os, sys, time, random
 import pickle
 import numpy as np
 
+from common import ROOT_PATH
 from bigfile import BigFile
 
 
@@ -13,8 +14,8 @@ Usage: read concepts from raw txt files
 Return value: list of str(concepts)
 '''
 
-def buildConcepts(collection, feature, rootpath):
-	concept_file = os.path.join(rootpath, collection, "Annotations", "concepts81train.txt")
+def buildConcepts(collection, feature, rootpath, conceptFile):
+	concept_file = os.path.join(rootpath, collection, "Annotations", conceptFile)
 	return [line.strip() for line in open(concept_file)]
 
 
@@ -24,9 +25,9 @@ read annotation from raw txt files
 save img_annotations_dict and nr_images into a binary file for later purposes
 '''
 
-def buildAnnotations(collection, feature, rootpath, outputFile="image_tags.bin"):
+def buildAnnotations(collection, feature, rootpath, conceptFile='concepts81train.txt', outputFile="image_tags.bin"):
 	id_file = os.path.join(rootpath, collection, "FeatureData", feature, "id.txt")
-	concepts = buildConcepts(collection, feature, rootpath)
+	concepts = buildConcepts(collection, feature, rootpath, conceptFile)
 	'''
 	  explanation of img_annotations_dict
 	  dict of list of booleans in order of [airplane, airport, animal, beach, ...]
@@ -42,13 +43,14 @@ def buildAnnotations(collection, feature, rootpath, outputFile="image_tags.bin")
 	    concept = concepts[i]
 	    print "concept:",concept
 	    annotation_file = os.path.join(rootpath, collection, "Annotations","Image",\
-	        "concepts81train.txt",'%s.txt'%concept)
+	        conceptFile,'%s.txt'%concept)
 	    for line in open(annotation_file):
 	        [img_id, hasConcept] = line.strip().split(' ')
 	        hasConcept = int(hasConcept)
 	        if hasConcept == -1: hasConcept = 0
 	        img_annotations_dict[img_id][i] = hasConcept
-	print "writing varriables 1.annotations and 2.nr_images into binary file %s...."%outputFile,
+	print "writing varriables 1.annotations and 2.nr_images into binary file %s...."%outputFile
+	print "nr_images:", nr_images
 	with open(outputFile,'wb') as f:
 	    pickle.dump(img_annotations_dict, f)
 	    pickle.dump(nr_images, f)
@@ -75,8 +77,8 @@ save idx_mapping and both matrices into a binary file for later purposes
  
 '''
 
-def buildFeatures(collection,feature,rootpath,outputFile='feature.bin'):
-	annotations, nr_images = readAnnotations('image_tags.bin')
+def buildFeatures(collection,feature,rootpath,annotationFile='image_tags.bin',outputFile='feature.bin'):
+	annotations, nr_images = readAnnotations(annotationFile)
 	feature_file_dir = os.path.join(rootpath, collection, "FeatureData", feature)
 	visual_feature, idx_mapping = buildVisualFeatures(feature_file_dir, nr_images)
 	tagDict = buildTagsDictionary(rootpath, collection, top_n = 1000)
@@ -92,6 +94,27 @@ def buildFeatures(collection,feature,rootpath,outputFile='feature.bin'):
 		print '[buildFeatures] writing semantic feature matrix...'
 		pickle.dump(semantic_feature, f)
 	print 'Done'
+
+
+def buildFeatures2(collection,feature,rootpath,annotationFile='bin/test/image_tags.bin'):
+	annotations, nr_images = readAnnotations(annotationFile)
+	feature_file_dir = os.path.join(rootpath, collection, "FeatureData", feature)
+	visual_feature, idx_mapping = buildVisualFeatures(feature_file_dir, nr_images)
+	tagDict = buildTagsDictionary(rootpath, collection, top_n = 1000)
+	textual_feature = buildTextualFeatures(rootpath, collection, tagDict, nr_images, idx_mapping)
+	semantic_feature = buildSemanticFeatures(annotations, idx_mapping)
+	#print "[buildFeatures2] writing feature matrix into %s..."%(outputFile)
+	print 'saving visual feature seperately into npy file...'
+	np.save('bin/test/visual_feature.npy', np.array(visual_feature))
+	print 'saving textualfeature seperately into npy file...'
+	np.save('bin/test/textual_feature.npy', np.array(textual_feature))
+	print 'saving semanticfeature seperately into npy file...'
+	np.save('bin/test/semantic_feature.npy', np.array(semantic_feature))
+	print 'Done'
+	with open('bin/test/idx_info.bin','wb') as f:
+		pickle.dump(idx_mapping, f)
+	print 'Done'
+	
 
 
 
@@ -277,9 +300,30 @@ def getTagIdxMapping(inputFile='freqtags.txt'):
 
 
 
+def buildTestSet(collection='flickr81test', feature='dsift', rootpath=ROOT_PATH, conceptFile='concepts81test.txt', outputFile='bin/test/image_tags.bin'):
+	buildAnnotations(collection, feature, rootpath, conceptFile, outputFile)
+	buildFeatures2(collection,feature,rootpath,annotationFile=outputFile)
+
+
+def printImgLink(img_id, url_file='NUS-WIDE-urls/NUS-WIDE-urls.txt'):
+	for line in open(url_file,'r'):
+		curr = ' '.join(line.split()).split() # get the img_id column from a multiple whitespaced line
+		if curr[1] == img_id:
+			print "links to image no. %s"%curr[1]
+			for i in range(2,len(curr)):
+				print curr[i]
+	
+
+
+
 				
 if __name__ == '__main__':
-	readFilteredFeatures()
+	# buld test data binary procedure
+	collection = 'flickr81test'
+	feature = 'dsift'
+	rootpath = ROOT_PATH
+	buildAnnotations(collection, feature, rootpath, conceptFile='concepts81test.txt',outputFile="bin/test/image_tags.bin")
+	buildFeatures2(collection,feature,rootpath,annotationFile='bin/test/image_tags.bin')
 
 
 

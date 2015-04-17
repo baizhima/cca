@@ -17,7 +17,7 @@ def multiviewCCA(C_all, index, reg):
         C_all[np.ix_(index_f,index_f)] = C_all[np.ix_(index_f,index_f)] + reg*np.eye(len(index_f))
     print "done. Time elapsed %f seconds"%(time.time()-s)
     s = time.time()
-    print "start eigin decomposition(est. 20min)..."
+    print "start eigin decomposition(est. 4min)..."
     # [D,V] = EIG(A,B) produces a diagonal matrix D of generalized
     # eigenvalues and a full matrix V whose columns are the corresponding
     # eigenvectors so that A*V = B*V*D.

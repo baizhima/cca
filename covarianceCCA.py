@@ -25,9 +25,9 @@ def cov(X, verbose=True):
 	for i in range(d):
 		col_i = [X[k][i] for k in range(n)]
 		for j in range(0,i+1):
-			print "(i,j)=(%d,%d)"%(i,j)	
+			if verbose:
+				print "(i,j)=(%d,%d)"%(i,j)	
 			col_j = [X[k][j] for k in range(n)]
-			#print col_i, col_j
 			covMatrix[i][j] = sum([(col_i[k] - mu[i])*(col_j[k] - mu[j]) for k in range(n)])/float(n-1)
 			covMatrix[j][i] = covMatrix[i][j]
 		if i%d == 5 and verbose:
@@ -35,24 +35,24 @@ def cov(X, verbose=True):
 	return np.array(covMatrix)
 
 
-def cov2(X, verbose=True):
+def cov2(X_original, verbose=True):
+	X = np.array(X_original)
 	n = X.shape[0]
 	d = X.shape[1]
-	print 'compute mu...'
+	if verbose:
+		print 'compute mu...'
 	mu = X.sum(axis=0)/float(n) # mu[j] j = 1,2,...,d
 	
 	covMatrix = np.zeros((d,d))
-	X_minus_mu = X
-	print 'compute X-mu...'
-	for j in range(d):
-		X_minus_mu[:,j] = X_minus_mu[:,j] - mu[j] * np.ones((n,))
-
+	X_minus_mu = X - mu
+	
 
 	print 'cov here...'
 	for i in range(d):
 		col_i = X_minus_mu[:,i]
 		for j in range(0,i+1):
-			print "(i,j)=(%d,%d)"%(i,j)	
+			if verbose:
+				print "(i,j)=(%d,%d)"%(i,j)	
 			col_j = X_minus_mu[:,j]
 			#print col_i, col_j
 			covMatrix[i][j] = sum(col_i * col_j)/float(n-1)
@@ -72,9 +72,13 @@ def saveCovMatrix(X, outputFile='bin/feature_cov.npy'):
 
 
 if __name__ == '__main__':
-	X = np.array([[-2.1,3],[-1,1.1],[4.3,0.12]])
+	a = np.array([1,1,1,0,1])
+	b = np.array([0,1,1,0,1])
+	X = np.column_stack((a,b))
 	covMat = cov2(X)
-	saveCovMatrix(covMat)
+	#saveCovMatrix(covMat)
 	#covMat = loadCovMatrix('feature_cov.npy')
-	print covMat
+	print "cov2 gets", covMat
+	
+	print "np.cov gets", np.cov(X.T)
 

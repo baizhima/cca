@@ -22,7 +22,7 @@ class ccaLearner:
             self.idx_mapping = pickle.load(f)
         print 'loading features(est.1min) from npy files...'
         self.visual_feature = np.load('bin/filtered_visual_feature.npy')
-        self.textual_feature = np.load('bin/sparsed_textual_feature.npy')
+        self.textual_feature = np.load('bin/filtered_textual_feature.npy')
         self.semantic_feature = np.load('bin/filtered_semantic_feature.npy')
         print 'done'
 
@@ -38,7 +38,14 @@ class ccaLearner:
         return np.dot(U, np.diag(s))
 
 
-    def compute_feature_cov(self, nviews=3):
+    def test_sky_cov(self,X):
+        sky_textual = X[:,1026]
+        sky_semantic = X[:,2079]
+        np.column_stack((sky_textual,sky_semantic))
+        print 'sky correlation before computing:'
+        print np.corrcoef(sky_textual, sky_semantic)[0][1]
+
+    def compute_feature_cov(self, nviews=3,sampleRatio=0.02):
         self.nviews = nviews
         
         X = self.visual_feature
@@ -55,13 +62,28 @@ class ccaLearner:
             index = np.concatenate((index, view3))
             XX = np.concatenate((XX,S),axis=1)
         print 'Done. Starting computing covariance...'
+        nr_used = int(len(self.visual_feature) * sampleRatio)
+        random.seed(20)
+        decision = [True] * (nr_used) + [False] * (len(self.visual_feature)-nr_used)
+        random.shuffle(decision)
+        if sampleRatio != 1:
+            XX = XX[np.ix_([i for i in range(XX.shape[0]) if decision[i]],[i for i in range(XX.shape[1])])]
+        self.test_sky_cov(XX)
         covMat = covarianceCCA.cov2(XX,verbose=True)
         covarianceCCA.saveCovMatrix(covMat)
         print 'Done computing and saving feature cov matrix'
-
+        return covMat
 
 
     def cca_training(self, nviews=3):
+        self.nviews = nviews
+        view1 = np.ones((self.visual_feature.shape[1],1))
+        view2 = 2 * np.ones((self.textual_feature.shape[1],1))
+        index =  np.concatenate((view1, view2))
+        if nviews == 3:
+            view3 = 3 * np.ones((self.semantic_feature.shape[1],1))
+            index = np.concatenate((index, view3))
+
         covMat = np.load('bin/feature_cov.npy')
         [V,D] = multiviewCCA(covMat, index, 0.0001)
         Wx = V
@@ -103,7 +125,7 @@ if __name__ == "__main__":
     mycca = ccaLearner('flickr81train','dsift')
     mycca.compute_feature_cov()
     
-    mycca.cca_training(3)
-    mycca.save_cca_model()
+    #mycca.cca_training(3)
+    #mycca.save_cca_model()
     
     

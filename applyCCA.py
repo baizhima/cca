@@ -3,19 +3,20 @@
 import pickle
 import numpy as np
 import math
+import os
 
 import utilCCA
+import metric
 from common import ROOT_PATH
 
 class ccaModel:
 	def __init__(self, collection, feature, path=ROOT_PATH, modelfile='cca.model'):
 		print 'Initiating CCA model...'
 		_, self.nviews, self.W, self.D = self.load_cca_model(modelfile)
-		self.idx_mapping, self.visual_feature, self.textual_feature, self.semantic_feature = self.load_image_dataset()
-		self.concepts = utilCCA.buildConcepts(collection, feature, path)
+		self.concepts = utilCCA.buildConcepts(collection, feature, path, 'concepts81test.txt')
+		self.concept_mapping = {self.concepts[i]:i for i in range(len(self.concepts))}
 		self.tagIdxMapping = {v:k for (k,v) in utilCCA.getTagIdxMapping('freqtags.txt').items()}
 		assert(len(self.tagIdxMapping) == 1000)
-		print 'Done'
 	
 	def load_cca_model(self, modelfile):
 		print "[load_cca_model] reading CCA model from binary files..."
@@ -27,81 +28,138 @@ class ccaModel:
 		print "Done"
 		return idx_mapping, nviews, [W1,W2,W3],[D1,D2,D3]
 
-	def load_image_dataset(self, featureFile='sample_feature.bin'): # sample_feature for easy purposes
-		print '[load_image_dataset] Loading candidate images...'
-		return utilCCA.readSampleFeatures(featureFile) 
+	def load_test_data(self, dataDir = 'bin/test'): # sample_feature for easy purposes
+		print '[load_test_data] Loading test set features(est. 1min)...'
+		with open(os.path.join(dataDir, 'idx_info.bin'),'rb') as f:
+			self.idx_mapping = pickle.load(f)
+		self.visual_feature = np.load(os.path.join(dataDir,'visual_feature.npy'))
+		self.textual_feature = np.load(os.path.join(dataDir,'textual_feature.npy'))
+		if self.nviews == 3:
+			self.semantic_feature = np.load(os.path.join(dataDir, 'semantic_feature.npy'))
+		print 'Done'
 
-	def maintain_board(self,board, top_n):
-		board.sort(key=lambda x:x[1], reverse=True)
+	def maintain_board(self,board, top_n, descending=True):
+		board.sort(key=lambda x:x[1], reverse=descending)
 		if len(board) > top_n:
 			board = board[0:top_n]
 		return board
 
-	def I2I_get_top_n_images(self, img_id, top_n = 5):
+	def I2I(self, img_id, top_n = 20):
 		assert(img_id in self.idx_mapping.keys())
 		leadboard = [(None, -1) for i in range(top_n)] # list of tuples (img_id, similarity)
 		home_visual = self.visual_feature[self.idx_mapping[img_id]]
 		count = 0
 		for (k,v) in self.idx_mapping.items():
 			if k == img_id:continue
+			if sum(self.semantic_feature[self.idx_mapping[k]]) == 0: continue # ignore nonsense img
 			curr_visual = self.visual_feature[self.idx_mapping[k]]
+
 			similarity = self.compute_similarity(home_visual, 1, curr_visual, 1)
 			leadboard.append((k,similarity))
 			count += 1
 			if count % 2000 == 0:
-				print '%d images have been compared with %s'%(count, img_id)
-			if len(leadboard) % 100 == 0:
+				print '[I2I] %d images have been compared with %s'%(count, img_id)
+			if len(leadboard) % 200 == 0:
 				leadboard = self.maintain_board(leadboard, top_n)
 		leadboard = self.maintain_board(leadboard, top_n)
 		return leadboard
 
-	def T2I_get_top_n_images(self, tags, top_n = 5):
+	def knn(self, img_id, top_n=20):
+		assert(img_id in self.idx_mapping.keys())
+		leadboard = [(None, 1e20) for i in range(top_n)] # list of tuples (img_id, similarity)
+		home_visual = self.visual_feature[self.idx_mapping[img_id]]
+		count = 0
+		for (k,v) in self.idx_mapping.items():
+			if k == img_id:continue
+			if sum(self.semantic_feature[self.idx_mapping[k]]) == 0: continue # ignore nonsense img
+			curr_visual = self.visual_feature[self.idx_mapping[k]]
+
+			similarity = np.linalg.norm(home_visual-curr_visual)
+			leadboard.append((k,similarity))
+			count += 1
+			if count % 10000 == 0:
+				print '[knn] %d images have been compared with %s'%(count, img_id)
+			if len(leadboard) % 200 == 0:
+				leadboard = self.maintain_board(leadboard, top_n, descending=False)
+		leadboard = self.maintain_board(leadboard, top_n, descending=False)
+		return leadboard
+
+
+	def T2I(self, tags, top_n = 30):
 		leadboard = [(None, -1) for i in range(top_n)] # list of tuples (img_id, similarity)
 		tagList = [0 for i in range(len(self.tagIdxMapping))]
 		for tag in tags:
 			if tag in self.tagIdxMapping.keys():
 				tagList[self.tagIdxMapping[tag]] = 1
+			
 		home_textual = np.array(tagList)
+		print home_textual
 		count = 0
 		for (k,v) in self.idx_mapping.items():
 			#if k == img_id:continue
+			if sum(self.semantic_feature[self.idx_mapping[k]]) == 0: continue # ignore nonsense img
 			curr_visual = self.visual_feature[self.idx_mapping[k]]
 			similarity = self.compute_similarity(curr_visual, 1, home_textual, 2)
 			leadboard.append((k,similarity))
 			count += 1
-			if count % 2000 == 0:
-				print '%d images have been compared'%(count)
-			if len(leadboard) % 100 == 0:
+			if count % 10000 == 0:
+				print '[T2I]%d images have been compared'%(count)
+			if len(leadboard) % 200 == 0:
 				leadboard = self.maintain_board(leadboard, top_n)
 		leadboard = self.maintain_board(leadboard, top_n)
 		return leadboard
 
+	def I2T(self, img_id, threshold=0.1):
+		assert(img_id in self.idx_mapping.keys())
+		retrieved = []
+		home_visual = self.visual_feature[self.idx_mapping[img_id]]
+		for i in range(len(self.concepts)):
+			curr_semantic = np.array([0 for j in range(len(self.concepts))])
+			curr_semantic[i] = 1
+			similarity = self.compute_similarity(curr_semantic, 3, home_visual, 1)
+			if similarity > threshold:
+				retrieved.append((self.concepts[i], similarity))
+		retrieved.sort(key=lambda x:x[1], reverse=True)
+		return retrieved
 
 
 
 	def I2I_check_correctness(self, requested, topList):
 		truth_concepts = self.get_ground_truth(requested)
-		print "%s truth concepts: %s"%(requested, truth_concepts[0]),truth_concepts[1]
+		print "%s truth concepts: %s"%(requested, truth_concepts[0]),truth_concepts
 		for (img_id, _) in topList:
 			concepts = self.get_ground_truth(img_id)
-			print "%s: "%img_id, concepts[1]
+			print "%s: "%img_id, concepts
 
 	def T2I_check_correctness(self, requested, topList):
 		print "requested concepts: ", requested
 		for (img_id, _) in topList:
 			concepts = self.get_ground_truth(img_id)
-			print "%s: "%img_id, concepts[1]
+			print "%s: "%img_id, concepts
+
+
+	def I2T_check_correctness(self, requested, retrieved):
+		print 'retrived concepts:'
+		for tup in retrieved:
+			print tup[0],tup[1]
+		print 'truth:',self.get_ground_truth(requested)
+		
+		print ""
 
 
 	def get_ground_truth(self, img_id):
 		concepts = []
-		#print '[get_ground_truth] img_id: %s'%(img_id)
 		curr_semantic = self.semantic_feature[self.idx_mapping[img_id]]
 		for i in range(len(curr_semantic)):
 			if curr_semantic[i] == 1:
 				concepts.append(self.concepts[i])
-		return (img_id, concepts)
+		return concepts
 
+
+	# return 1 if img_id has given concept else return 0
+	def has_concept(self, img_id, concept):
+		curr_semantic = self.semantic_feature[self.idx_mapping[img_id]]
+		return curr_semantic[self.concept_mapping[concept]]
 
 	# sim(x,y) = ((phi_x * W1[i] * D1[i]) * (phi_y * W2[i] * D2[i]).T) / (sqrt((phi_x * W1[i] * D1[i]).^2) * sqrt((phi_y * W2[i] * D2[i]).T).^2))
 	def compute_similarity(self, x, view1, y, view2, pwr=4):
@@ -117,34 +175,88 @@ class ccaModel:
 	def kernel_mapping(self, x, viewNo):
 		if viewNo == 1: # Bhattacharyya kernel term-wise sqrt 
 			return np.array([math.sqrt(elem) for elem in x])
-		if viewNo == 2:
-			norm = np.linalg.norm(x) # normalized vector(not mentioned in paper explicitly)
-			#return x/norm
-			return x/norm
+		else:
+			return x * 5
+
+
+	def compute_AP(self, concept, threshold=0.2):
+		home_semantic = np.array([0 for i in range(len(self.concepts))])
+		home_semantic[self.concept_mapping[concept]] = 1
+
+		test_img_ids = [(v,k) for (k,v) in self.idx_mapping.items()]
+		test_img_ids.sort(key=lambda x:x[0])
+		test_img_ids_ordered = [x[1] for x in test_img_ids]
+		truths = [self.has_concept(test_img_ids_ordered[i],concept) for i in range(len(test_img_ids))]
+		predictions = [0 for i in range(len(test_img_ids))]
+		for i in range(len(test_img_ids)):
+			curr_visual = self.visual_feature[i]
+			predictions[i] = self.compute_similarity(home_semantic, 3, curr_visual, 1)
+			if i % 20000 == 0:
+				print '[compute_AP] %d images has been checked with concept %s'%(i,concept)
+		labels = [(test_img_ids_ordered[i],predictions[i],truths[i]) for i in range(len(test_img_ids))]
+		labels.sort(key=lambda x:x[1],reverse=True)
+		diffs = [1 for i in range(len(labels))]
+		for i in range(len(labels)):
+			# labels[i][1]->prediction,labels[i][2]->truth
+			prediction = labels[i][1]
+			truth = labels[i][2]
+			if prediction >= threshold and truth == 0:
+				diffs[i] = -1
+			if prediction < threshold and truth == 1:
+				diffs[i] = -1
+		scorer =  metric.APScorer(0)
+		ap_value = scorer.score(diffs)
+		print concept, scorer.name(), ap_value
+		return ap_value
+
+
+
 
 
 
 if __name__ == '__main__':
-	mymodel = ccaModel('flickr81train','dsift', ROOT_PATH,'cca.model')
-	
+	mymodel = ccaModel('flickr81test','dsift', ROOT_PATH,'cca.model')
+	mymodel.load_test_data(dataDir='bin/test')
 
-	test_imgs = ['1598506044','193343036','1531933449','165812418','2305243']
+	#concept = 'airplane'
+	#ap_value = mymodel.compute_AP(concept,threshold = 0.2)
+
+	metrics = []
+	for concept in mymodel.concepts:
+		ap_value = mymodel.compute_AP(concept,threshold = 0.2)
+		metrics.append((concept,ap_value))
+	metrics.sort(key=lambda x:x[1],reverse=True)
+	print metrics
+	'''
+	
+	print 'I2I search'
+	test_imgs = ['1778976431','1204598720'] # car,bird
+	#test_imgs = ['1598506044'] # training_tags
 	for test_img in test_imgs:
 		print 'I2I test search on image No. %s'%test_img
-		topList = mymodel.I2I_get_top_n_images(test_img, 10)
-		mymodel.I2I_check_correctness(test_img, topList)
-	
-
-
+		
+		leadboard = mymodel.I2I(test_img)
+		mymodel.I2I_check_correctness(test_img,leadboard)
+		leadboard2 = mymodel.knn(test_img)
+		mymodel.I2I_check_correctness(test_img,leadboard2)
+		print 'obtaining available links...'
+		utilCCA.printImgLink(test_img)
 
 	'''
+
+	'''	
 	print 'T2I test search'
-	test_tags = ['girl','black']
-	topList = mymodel.T2I_get_top_n_images(test_tags, 8)
+	test_tags = ['snow','winter','ice','cold','nature','trees','mountains','white']
+	topList = mymodel.T2I(test_tags)
 	mymodel.T2I_check_correctness(test_tags, topList)
 	'''
-	
 
-	
- 
+	'''
+	test_imgs = ['134416814','159909288'] # dog,flower
+	for test_img in test_imgs:
+		print 'I2T test search on image No. %s'%test_img
+		retrieved = mymodel.I2T(test_img)
+		mymodel.I2T_check_correctness(test_img,retrieved)
+		utilCCA.printImgLink(test_img)
+	'''
 	
