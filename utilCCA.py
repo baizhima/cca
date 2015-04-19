@@ -2,6 +2,7 @@
 # Shan Lu (GitHub: baizhima), Renmin University of China
 import os, sys, time, random
 import pickle
+import math
 import numpy as np
 
 from common import ROOT_PATH
@@ -298,7 +299,14 @@ def getTagIdxMapping(inputFile='freqtags.txt'):
 
 	return tagIdxMapping
 
+def getTagWeights(inputFile='freqtags.txt'):
+	weights = list()
+	for line in open(inputFile,'r'):
+		curr = line.strip('\n').split(' ')
+		weight = math.log(15554.5/int(curr[2]))
+		weights.append(weight)
 
+	return np.array(weights)
 
 def buildTestSet(collection='flickr81test', feature='dsift', rootpath=ROOT_PATH, conceptFile='concepts81test.txt', outputFile='bin/test/image_tags.bin'):
 	buildAnnotations(collection, feature, rootpath, conceptFile, outputFile)

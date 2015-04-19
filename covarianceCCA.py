@@ -3,7 +3,7 @@
 
 import numpy as np
 import math
-
+import time
 
 # X is a n*d feature matrix, where each row represents an observation 
 # and each column represents a feature dimention
@@ -48,17 +48,20 @@ def cov2(X_original, verbose=True):
 	
 
 	print 'cov here...'
+	s = time.time()
 	for i in range(d):
 		col_i = X_minus_mu[:,i]
-		for j in range(0,i+1):
-			if verbose:
-				print "(i,j)=(%d,%d)"%(i,j)	
+		print "processing row %d"%i
+		if verbose and i % 5 == 0:
+			used_time = time.time() - s
+			overall_time = float(used_time) / (((2+i)*(i+1)/2.0)/((2+d)*(d+1)/2.0))
+			print 'est. remaining time %f mins'%((overall_time-used_time)/60.0)
+		for j in range(0,i+1):	
 			col_j = X_minus_mu[:,j]
 			#print col_i, col_j
 			covMatrix[i][j] = sum(col_i * col_j)/float(n-1)
 			covMatrix[j][i] = covMatrix[i][j]
-		if i%d == 5 and verbose:
-			print '%d dimensions computed, %f work done'%(i, i/float(d))
+		
 	return np.array(covMatrix)
 
 

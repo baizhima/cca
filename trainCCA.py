@@ -123,9 +123,9 @@ class ccaLearner:
 
 if __name__ == "__main__":
     mycca = ccaLearner('flickr81train','dsift')
-    mycca.compute_feature_cov()
+    #mycca.compute_feature_cov()
     
-    #mycca.cca_training(3)
-    #mycca.save_cca_model()
+    mycca.cca_training(3)
+    mycca.save_cca_model()
     
     
