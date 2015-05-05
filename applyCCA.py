@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 import math
 import os
+import random
 
 import utilCCA
 import metric
@@ -56,6 +57,7 @@ class ccaModel:
 			curr_visual = self.visual_feature[self.idx_mapping[k]]
 
 			similarity = self.compute_similarity(home_visual, 1, curr_visual, 1)
+			#similarity = np.linalg.norm(home_visual-curr_visual) # dsift original
 			leadboard.append((k,similarity))
 			count += 1
 			if count % 10000 == 0:
@@ -110,41 +112,39 @@ class ccaModel:
 		leadboard = self.maintain_board(leadboard, top_n)
 		return leadboard
 
-	def T2I(self, tags, top_n = 100):
+	def T2I(self, concept, top_n = 100):
+		home_textual = np.array([0 for i in range(81)])
+		for i in range(len(self.concepts)):
+			if self.concepts[i] == concept:
+				home_textual[i] = 1
 		leadboard = list()
-		home_tags = np.array([0 for i in range(len(self.tagIdxMapping))])
-		filtered_tags = set()
-		for tag in tags:
-			if tag in self.tagIdxMapping.keys():
-				home_tags[self.tagIdxMapping[tag]] = 1
-				filtered_tags.add(tag)
-		print "filtered_tags: ", filtered_tags
-		print '%d tags in frequent tag sets'%sum(filtered_tags)
-		count = 0
 		for (k,v) in self.idx_mapping.items():
-			curr_textual = self.textual_feature[self.idx_mapping[k]]
-			similarity = home_tags.dot(curr_textual)
+			curr_visual = self.visual_feature[self.idx_mapping[k]]
+			if sum(self.semantic_feature[self.idx_mapping[k]]) == 0: continue
+			similarity = self.compute_similarity(home_textual, 3, curr_visual, 1)
 			leadboard.append((k,similarity))
-			count += 1
-			if count % 10000 == 0:
-				print '[T2I]%d images have been compared'%(count)
-			if len(leadboard) % 500 == 0:
+			if len(leadboard) % 200 == 0:
 				leadboard = self.maintain_board(leadboard, top_n)
 		leadboard = self.maintain_board(leadboard, top_n)
 		return leadboard
 
 
 
-	def I2C(self, img_id, threshold=0.1):
+	def I2T(self, img_id, threshold=0.1):
+		'''
+		return an ordered litst of tuple (concept, similarity)
+		'''
+
 		assert(img_id in self.idx_mapping.keys())
 		retrieved = []
 		home_visual = self.visual_feature[self.idx_mapping[img_id]]
+
 		for i in range(len(self.concepts)):
-			curr_semantic = np.array([-1 for j in range(len(self.concepts))])
+			curr_semantic = np.array([0 for j in range(len(self.concepts))])
 			curr_semantic[i] = 1
 			similarity = self.compute_similarity(curr_semantic, 3, home_visual, 1)
-			if similarity > threshold:
-				retrieved.append((self.concepts[i], similarity))
+			retrieved.append((self.concepts[i], similarity.real))
+			
 		retrieved.sort(key=lambda x:x[1], reverse=True)
 		return retrieved
 
@@ -160,20 +160,20 @@ class ccaModel:
 			concepts = self.get_ground_truth(img_id)
 			print "%s: "%img_id, concepts
 
-	def T2I_check_correctness(self, requested, topList):
+	def T2I_check_correctness(self, requested, leadboard):
 		print "requested concepts: ", requested
-		for (img_id, _) in topList:
+		for (img_id, _) in leadboard:
 			concepts = self.get_ground_truth(img_id)
 			print "%s: "%img_id, concepts
 
 
-	def I2C_check_correctness(self, requested, retrieved):
-		print 'retrived concepts:'
+	def I2T_check_correctness(self, requested, retrieved):
+		print 'retrived concepts with similarity:'
 		for tup in retrieved:
 			print tup[0],tup[1]
 		print 'truth:',self.get_ground_truth(requested)
 		
-		print ""
+	
 
 
 	def get_ground_truth(self, img_id):
@@ -208,7 +208,7 @@ class ccaModel:
 			vec = x * self.tagWeights
 			return vec / np.linalg.norm(vec)
 		else:
-			return x
+			return x * 5
 
 	def compute_I2I_AP(self, requested, leadboard, typeNo, top_k=0,):
 		if typeNo == 1: # I2I
@@ -232,6 +232,37 @@ class ccaModel:
 		print truth_concepts, scorer.name(), ap_value
 		return ap_value
 
+	def compute_T2I_AP(self, concept, leadboard):
+		'''
+		leadboard is a list of img_ids
+		'''
+		sorted_labels = []
+		for (img_id, _) in leadboard:
+			curr_concepts = set(self.get_ground_truth(img_id))
+			if concept in curr_concepts:
+				sorted_labels.append(1)
+			else:
+				sorted_labels.append(-1)
+		scorer =  metric.APScorer(0)
+		ap_value = scorer.score(sorted_labels)
+		print concept, scorer.name(), ap_value
+		return ap_value
+
+	def compute_I2T_AP(self, requested, leadboard):
+		'''
+		leadboard is a list of (concept, similarity) descended by similarty
+		'''
+		truth_concepts = set(self.get_ground_truth(requested))
+		sorted_labels = []
+		for (concept, _) in leadboard:
+			if concept in truth_concepts:
+				sorted_labels.append(1)
+			else:
+				sorted_labels.append(-1)
+		scorer =  metric.APScorer(0)
+		ap_value = scorer.score(sorted_labels)
+		print truth_concepts, scorer.name(), ap_value
+		return ap_value
 
 
 
@@ -268,7 +299,17 @@ class ccaModel:
 		print concept, scorer.name(), ap_value
 		return ap_value
 
-
+	def get_test_sample(self, sampleSize=1000,seedNo=26):
+		sample_ids = []
+		n = len(self.visual_feature)
+		random.seed(seedNo)
+		decision = [True] * (sampleSize) + [False] * (n-sampleSize)
+		random.shuffle(decision)
+		for (img_id, row_idx) in self.idx_mapping.items():
+		    if decision[row_idx] and len(self.get_ground_truth(img_id)) >= 2:
+		        sample_ids.append(img_id)
+		random.shuffle(sample_ids)
+		return sample_ids[0:min(100, len(sample_ids))]				
 
 
 
@@ -277,55 +318,52 @@ if __name__ == '__main__':
 	mymodel = ccaModel('flickr81test','dsift', ROOT_PATH,'cca.model')
 	mymodel.load_test_data(dataDir='bin/test')
 
-	'''
-	concept = 'airplane'
-	ap_value = mymodel.compute_AP(concept,threshold = 0.2)
-	'''
-	'''
-	metrics = []
-	for concept in mymodel.concepts:
-		ap_value = mymodel.compute_AP(concept,threshold = 0.2)
-		metrics.append((concept,ap_value))
-	metrics.sort(key=lambda x:x[1],reverse=True)
-	print metrics
-	'''
+	
 	
 	'''
 	print 'I2I search'
-	test_imgs = ['1204598720'] # ['animal', 'bird', 'cloud', 'sky'] AP 0.8776
-	#test_imgs = ['134416814'] # [dog,person] AP 0.707206983901
-	#test_imgs = ['1224483022'] # sunset
-	#test_imgs = ['76593245'] # ['nighttime', 'railroad', 'road'] AP 0.3540
+	#test_imgs = mymodel.get_test_sample(sampleSize=1000)
+	img_aps = []
+	#test_imgs = ['76593245','545176797','141451694','141784798'] #
 	for test_img in test_imgs:
 		print 'I2I test search on image No. %s'%test_img
 		
-		leadboard = mymodel.I2I(test_img)
+		leadboard = mymodel.knn(test_img)
 		mymodel.I2I_check_correctness(test_img,leadboard)
-		mymodel.compute_I2I_AP(test_img, leadboard, 1)
-		#leadboard2 = mymodel.knn(test_img)
-		#mymodel.I2I_check_correctness(test_img,leadboard2)
-		print 'obtaining available links...'
-		utilCCA.printImgLink(test_img)
+		curr_ap = mymodel.compute_I2I_AP(test_img, leadboard, 1)
+		img_aps.append(curr_ap)
+		#print 'obtaining available links...'
+		#utilCCA.printImgLink(test_img)
+	print "I2I mAP: ", float(sum(img_aps))/len(img_aps)
 	'''
-	
 
 	
-	'''
+	
 	print 'T2I test search'
-	test_tags = ['snow','winter','ice','cold','nature','trees','mountains','white']
-	topList = mymodel.T2I(test_tags)
-	mymodel.T2I_check_correctness(test_tags, topList)
-	mymodel.compute_I2I_AP(test_tags, topList, 2)
+	#test_tags = mymodel.get_test_sample(sampleSize=200,seedNo=15)
+	T2I_aps = []
+	for (i, concept) in enumerate(mymodel.concepts):
+		leadboard = mymodel.T2I(concept)
+		mymodel.T2I_check_correctness(concept, leadboard)
+		curr_ap = mymodel.compute_T2I_AP(concept, leadboard)
+		print concept, curr_ap
+		T2I_aps.append(curr_ap)
+
+	print "T2I mAP: ", float(sum(T2I_aps))/len(T2I_aps)
 	
 	
-	
+
 	'''
-	
-	test_imgs = ['2588989495','2205855867','132190919','2671993337'] # dog,flower,sunset
+	I2T_aps = []
+	test_imgs = mymodel.get_test_sample(sampleSize=200,seedNo=10)
+	test_imgs = ['492970362','204616617','122033461','391002501','2108534954']
 	for test_img in test_imgs:
-		print 'I2C test search on image No. %s'%test_img
-		retrieved = mymodel.I2C(test_img)
-		mymodel.I2C_check_correctness(test_img,retrieved)
-		utilCCA.printImgLink(test_img)
-	
+		print 'I2T test search on image No. %s'%test_img
+		leadboard = mymodel.I2T(test_img)
+		curr_ap = mymodel.compute_I2T_AP(test_img, leadboard)
+		I2T_aps.append(curr_ap)
+		mymodel.I2T_check_correctness(test_img,leadboard)
+		#utilCCA.printImgLink(test_img)
+	print "I2T mAP: ", float(sum(I2T_aps))/len(I2T_aps)
+	'''
 	
